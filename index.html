@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Emits 統合管理システム</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-base:       #0a0d10;
+      --bg-panel:      #111620;
+      --bg-panel2:     #161c2a;
+      --border:        #1e2d42;
+      --border-bright: #2a4060;
+      --text-primary:  #b8c8d8;
+      --text-dim:      #5a6a7a;
+      --text-bright:   #ddeeff;
+      --accent-green:  #00e5a0;
+      --accent-red:    #ff3b3b;
+      --accent-orange: #ff9900;
+      --accent-blue:   #3a9bdc;
+      --accent-yellow: #f0c040;
+      --font-mono:     'Courier New', Courier, monospace;
+      --font-ui:       'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      overflow: hidden;
+    }
+
+    .screen { display: none; width: 100%; height: 100vh; }
+    .screen.active { display: flex; }
+
+    /* Scanlines */
+    .scanlines {
+      pointer-events: none;
+      position: fixed; inset: 0; z-index: 9999;
+      background: repeating-linear-gradient(
+        to bottom, transparent 0px, transparent 3px,
+        rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 4px
+      );
+    }
+
+    /* ===== COMMON HEADER ===== */
+    .sys-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 20px; height: 40px;
+      background: var(--bg-panel); border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .sys-header-left { display: flex; align-items: center; gap: 12px; }
+    .sys-header-right { display: flex; align-items: center; gap: 16px;
+      font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+    .sys-badge {
+      background: var(--accent-blue); color: #fff;
+      font-family: var(--font-mono); font-size: 10px;
+      padding: 2px 8px; letter-spacing: 2px;
+    }
+    .sys-title { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); letter-spacing: 1px; }
+    .sys-status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; }
+    .back-btn {
+      background: transparent; border: none;
+      color: var(--text-dim); font-family: var(--font-mono);
+      font-size: 11px; letter-spacing: 2px; cursor: pointer; padding: 0; text-transform: uppercase;
+    }
+    .back-btn:hover { color: var(--accent-blue); }
+
+    /* ===== INTRO SCREEN ===== */
+    #screen-intro {
+      flex-direction: column; align-items: center; justify-content: center;
+      background: #000; position: relative; cursor: pointer;
+    }
+    .intro-line {
+      font-family: var(--font-mono); font-size: clamp(13px, 2vw, 17px);
+      color: var(--text-primary); letter-spacing: 2px; line-height: 2.2;
+      text-align: center; opacity: 0;
+      transition: opacity 0.8s ease;
+      max-width: 640px; padding: 0 24px;
+    }
+    .intro-line.visible { opacity: 1; }
+    .intro-line.dim { opacity: 0.35; }
+    .intro-line .hl { color: var(--accent-orange); }
+    .intro-line .hl-green { color: var(--accent-green); }
+    .intro-skip {
+      position: absolute; bottom: 32px;
+      font-family: var(--font-mono); font-size: 10px;
+      color: var(--text-dim); letter-spacing: 3px;
+      animation: blink 1.4s infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:0.3} 50%{opacity:1} }
+
+    /* ===== TITLE SCREEN ===== */
+    #screen-title {
+      flex-direction: column; align-items: center; justify-content: flex-end;
+      position: relative; overflow: hidden;
+      background: #050810;
+    }
+    .title-bg-logo {
+      position: absolute; inset: 0;
+      background: url('logo_main.png') center center / cover no-repeat;
+      opacity: 0.92;
+    }
+    .title-bg-gradient {
+      position: absolute; inset: 0;
+      background: linear-gradient(to bottom, rgba(5,8,16,0.1) 0%, rgba(5,8,16,0.0) 40%, rgba(5,8,16,0.7) 70%, rgba(5,8,16,1) 100%);
+    }
+    .title-logo-wrap { position: relative; z-index: 2; text-align: center; margin-bottom: 48px; }
+    .title-emits-badge { display: none; }
+    .title-main { display: none; }
+    .title-sub {
+      font-family: var(--font-mono); font-size: 11px;
+      color: rgba(184,200,216,0.6); letter-spacing: 3px;
+    }
+    .title-menu { position: relative; z-index: 2; display: flex; flex-direction: column; gap: 12px; width: 280px; margin-bottom: 60px; }
+    .menu-btn {
+      padding: 14px 0; background: rgba(5,8,16,0.6);
+      border: 1px solid var(--border-bright); color: var(--text-primary);
+      font-family: var(--font-mono); font-size: 13px; letter-spacing: 4px;
+      cursor: pointer; text-transform: uppercase; transition: all 0.2s;
+      backdrop-filter: blur(4px);
+    }
+    .menu-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); background: rgba(58,155,220,0.1); }
+    .menu-btn.primary { border-color: var(--accent-orange); color: var(--accent-orange); }
+    .menu-btn.primary:hover { background: rgba(255,153,0,0.12); }
+    .title-footer {
+      position: absolute; bottom: 24px; z-index: 2;
+      font-family: var(--font-mono); font-size: 9px;
+      color: var(--text-dim); letter-spacing: 2px;
+    }
+
+    /* ===== CHAPTER SELECT SCREEN ===== */
+    #screen-chapter {
+      flex-direction: column;
+      background: radial-gradient(ellipse at 50% 30%, #0d1a2a 0%, #050810 100%);
+    }
+    .chapter-body {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 32px;
+      padding: 40px 20px;
+    }
+    .chapter-heading {
+      text-align: center;
+      font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: 6px; color: var(--text-dim); text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .chapter-cards {
+      display: flex; gap: 32px; align-items: stretch;
+    }
+    .chapter-card { position: relative;
+      width: 320px; cursor: pointer;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-bright);
+      padding: 28px 28px 24px;
+      display: flex; flex-direction: column; gap: 14px;
+      transition: all 0.2s; position: relative; overflow: hidden;
+    }
+    .chapter-card:hover { border-color: var(--accent-blue); background: rgba(58,155,220,0.04); }
+    .chapter-card:hover .chapter-card-arrow { color: var(--accent-blue); }
+    .chapter-card-num {
+      font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: 4px; color: var(--text-dim); text-transform: uppercase;
+    }
+    .chapter-card-era {
+      font-family: var(--font-mono); font-size: 22px;
+      font-weight: bold; color: var(--accent-yellow);
+    }
+    .chapter-card-title {
+      font-family: var(--font-mono); font-size: 15px;
+      color: var(--text-bright); line-height: 1.5;
+    }
+    .chapter-card-location {
+      font-family: var(--font-mono); font-size: 10px;
+      color: var(--text-dim); letter-spacing: 1px;
+    }
+    .chapter-card-err {
+      display: inline-block;
+      background: rgba(255,59,59,0.1); border: 1px solid rgba(255,59,59,0.4);
+      font-family: var(--font-mono); font-size: 11px;
+      color: var(--accent-red); padding: 4px 10px; letter-spacing: 2px;
+      animation: flicker 4s infinite;
+    }
+    .chapter-card-desc {
+      font-size: 12px; color: var(--text-dim); line-height: 1.7;
+      border-left: 2px solid var(--border-bright); padding-left: 10px;
+    }
+    .chapter-card-arrow {
+      font-family: var(--font-mono); font-size: 11px;
+      color: var(--text-dim); letter-spacing: 2px;
+      margin-top: auto; padding-top: 8px;
+      transition: color 0.2s;
+    }
+    .chapter-card-divider {
+      width: 1px; background: var(--border); flex-shrink: 0;
+    }
+    .chapter-note {
+      font-family: var(--font-mono); font-size: 10px;
+      color: var(--text-dim); letter-spacing: 2px; text-align: center;
+    }
+
+    /* ===== MAP SCREEN ===== */
+    #screen-map {
+      flex-direction: column;
+      background: var(--bg-base);
+    }
+    .map-body { flex: 1; display: flex; overflow: hidden; }
+    .map-canvas {
+      flex: 1; position: relative; overflow: hidden;
+      background: #0c1520;
+    }
+    .map-grid {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(30,45,66,0.4) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(30,45,66,0.4) 1px, transparent 1px);
+      background-size: 60px 60px;
+    }
+    .alert-pin {
+      position: absolute; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    .pin-body {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: var(--accent-red); display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 12px rgba(255,59,59,0.7);
+      animation: pin-pulse 2s infinite;
+    }
+    @keyframes pin-pulse {
+      0%, 100% { box-shadow: 0 0 12px rgba(255,59,59,0.7); }
+      50% { box-shadow: 0 0 24px rgba(255,59,59,1); }
+    }
+    .pin-icon { transform: rotate(45deg); font-size: 13px; color: #fff; font-weight: bold; font-family: var(--font-mono); }
+    .pin-label {
+      position: absolute; top: -20px; left: 50%; transform: translateX(-50%);
+      white-space: nowrap; font-family: var(--font-mono); font-size: 10px;
+      color: var(--accent-red); background: rgba(10,13,16,0.85);
+      padding: 2px 6px; border: 1px solid var(--accent-red);
+    }
+    .map-legend {
+      position: absolute; bottom: 16px; left: 16px;
+      background: rgba(17,22,32,0.9); border: 1px solid var(--border);
+      padding: 10px 14px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim);
+    }
+    .map-legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .map-sidebar {
+      width: 280px; background: var(--bg-panel);
+      border-left: 1px solid var(--border);
+      display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    .sidebar-section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .sidebar-section-title {
+      font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: 3px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 10px;
+    }
+    .alert-list-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer;
+    }
+    .alert-list-item:last-child { border-bottom: none; }
+    .alert-list-item:hover { background: rgba(255,59,59,0.04); }
+    .alert-badge {
+      flex-shrink: 0; background: var(--accent-red); color: #fff;
+      font-family: var(--font-mono); font-size: 9px; padding: 2px 5px; margin-top: 2px;
+    }
+    .alert-name { font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); line-height: 1.4; }
+    .alert-code { font-family: var(--font-mono); font-size: 10px; color: var(--accent-orange); }
+
+    /* ===== TERMINAL SCREEN ===== */
+    #screen-terminal { flex-direction: column; background: var(--bg-base); }
+    .terminal-body { flex: 1; display: flex; overflow: hidden; }
+    .terminal-map-panel { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+    .terminal-map-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 16px; border-bottom: 1px solid var(--border);
+      background: var(--bg-panel); flex-shrink: 0;
+    }
+    .terminal-map-title { font-family: var(--font-mono); font-size: 10px; letter-spacing: 3px; color: var(--text-dim); text-transform: uppercase; }
+    .layer-toggle { display: flex; gap: 4px; }
+    .layer-btn {
+      padding: 4px 12px; background: transparent;
+      border: 1px solid var(--border); color: var(--text-dim);
+      font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px;
+      cursor: pointer; text-transform: uppercase; transition: all 0.15s;
+    }
+    .layer-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+    .layer-btn.active { border-color: var(--accent-green); color: var(--accent-green); background: rgba(0,229,160,0.08); }
+    .terminal-map-display { flex: 1; position: relative; overflow: hidden; }
+    .map-layer { display: none; position: absolute; inset: 0; }
+    .map-layer.active { display: block; }
+    .layer-modern { background: #0c1520; }
+    .layer-old { background: #120e08; }
+    .layer-aerial { background: #080f08; }
+    .layer-label {
+      position: absolute; top: 10px; left: 10px;
+      font-family: var(--font-mono); font-size: 9px; letter-spacing: 2px;
+      color: var(--text-dim); background: rgba(10,13,16,0.8);
+      padding: 3px 8px; border: 1px solid var(--border);
+    }
+    .layer-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .target-marker { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+    .target-crosshair {
+      width: 40px; height: 40px; border: 2px solid var(--accent-red); border-radius: 50%;
+      position: relative; animation: crosshair-pulse 2s infinite;
+    }
+    @keyframes crosshair-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255,59,59,0.4); }
+      50% { box-shadow: 0 0 0 10px rgba(255,59,59,0); }
+    }
+    .target-crosshair::before, .target-crosshair::after { content: ''; position: absolute; background: var(--accent-red); }
+    .target-crosshair::before { width: 1px; height: 12px; top: -6px; left: 50%; transform: translateX(-50%); }
+    .target-crosshair::after { height: 1px; width: 12px; left: -6px; top: 50%; transform: translateY(-50%); }
+
+    .terminal-data-panel {
+      width: 340px; background: var(--bg-panel);
+      display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    .data-section { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .data-section-title { font-family: var(--font-mono); font-size: 9px; letter-spacing: 3px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; }
+    .info-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+    .info-key { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+    .info-val { font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); }
+    .error-log-box {
+      background: rgba(255,59,59,0.06); border: 1px solid rgba(255,59,59,0.3);
+      padding: 10px 12px; font-family: var(--font-mono);
+    }
+    .error-code-line {
+      font-size: 18px; font-weight: bold; color: var(--accent-red);
+      letter-spacing: 2px; margin-bottom: 4px; animation: flicker 3s infinite;
+    }
+    @keyframes flicker {
+      0%, 95%, 100% { opacity: 1; }
+      96% { opacity: 0.6; } 97% { opacity: 1; } 98% { opacity: 0.4; }
+    }
+    .error-detail { font-size: 10px; color: var(--accent-orange); line-height: 1.6; }
+    .error-timestamp { font-size: 10px; color: var(--text-dim); margin-top: 6px; }
+    .approve-btn-wrap { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .approve-btn {
+      width: 100%; padding: 12px 0; background: transparent;
+      border: 1px solid var(--text-dim); color: var(--text-dim);
+      font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px;
+      cursor: not-allowed; text-transform: uppercase; transition: all 0.2s; position: relative;
+    }
+    .approve-btn.enabled {
+      border-color: var(--accent-green); color: var(--accent-green);
+      cursor: pointer; animation: btn-ready 2s infinite;
+    }
+    @keyframes btn-ready {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(0,229,160,0); }
+      50% { box-shadow: 0 0 12px rgba(0,229,160,0.3); }
+    }
+    .approve-btn.enabled:hover { background: rgba(0,229,160,0.1); }
+    .approve-btn.disabled-label::after {
+      content: '[ 条件未達成 ]'; position: absolute; right: 12px;
+      font-size: 9px; color: var(--text-dim);
+    }
+
+    /* ===== CHARACTER WINDOW ===== */
+    .char-window {
+      display: flex; align-items: flex-end;
+      border-top: 1px solid var(--border); background: var(--bg-panel2);
+    }
+    .char-portrait {
+      flex-shrink: 0; width: 100px; height: 160px;
+      display: flex; align-items: flex-end; justify-content: center;
+      overflow: hidden; position: relative; border-right: 1px solid var(--border);
+    }
+    .char-portrait img {
+      width: auto; height: 100%; display: block;
+      object-fit: cover; object-position: top center;
+      image-rendering: pixelated; filter: brightness(0.9) contrast(1.05);
+    }
+    .char-portrait-overlay {
+      position: absolute; inset: 0;
+      background: linear-gradient(to top, rgba(17,22,32,0.3) 0%, transparent 40%);
+      pointer-events: none;
+    }
+    .char-dialog {
+      flex: 1; padding: 10px 14px;
+      display: flex; flex-direction: column; justify-content: flex-end; min-height: 90px;
+    }
+    .char-dialog .msg-speaker {
+      font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: 2px; margin-bottom: 5px;
+    }
+    .char-dialog .msg-text {
+      font-size: 12px; line-height: 1.7; color: var(--text-bright);
+      border-left: 2px solid var(--accent-blue); padding-left: 8px;
+    }
+    .char-dialog.terminal-voice .msg-speaker { color: var(--accent-orange); }
+    .char-dialog.terminal-voice .msg-text { border-left-color: var(--accent-orange); }
+
+    /* ===== RESULT OVERLAY ===== */
+    @keyframes settlementFlash {
+      0%   { background: rgba(0,229,160,0.95); }
+      8%   { background: rgba(0,0,0,0.97); }
+      14%  { background: rgba(0,229,160,0.7); }
+      20%  { background: rgba(0,0,0,0.97); }
+      100% { background: rgba(0,0,0,0.95); }
+    }
+    @keyframes settlementTitleIn {
+      0%   { opacity: 0; transform: scale(2.5); letter-spacing: 20px; }
+      40%  { opacity: 1; transform: scale(1.05); letter-spacing: 8px; }
+      100% { opacity: 1; transform: scale(1); letter-spacing: 6px; }
+    }
+    @keyframes settlementBoxIn {
+      0%   { opacity: 0; transform: translateY(30px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes settlementScanPulse {
+      0%, 100% { opacity: 0.0; }
+      50%       { opacity: 0.18; }
+    }
+    .result-overlay {
+      display: none; position: fixed; inset: 0; z-index: 1000;
+      align-items: center; justify-content: center;
+      flex-direction: column;
+    }
+    .result-overlay.active {
+      display: flex;
+      animation: settlementFlash 1.2s ease-out forwards;
+    }
+    .result-overlay.active .result-stamp {
+      animation: settlementTitleIn 0.8s cubic-bezier(0.22,1,0.36,1) 0.15s both;
+    }
+    .result-overlay.active .result-box {
+      animation: settlementBoxIn 0.6s ease-out 0.7s both;
+    }
+    .result-stamp {
+      font-family: var(--font-mono); font-size: clamp(48px, 10vw, 96px);
+      font-weight: 900; letter-spacing: 6px;
+      color: var(--accent-green);
+      text-shadow: 0 0 40px rgba(0,229,160,0.8), 0 0 80px rgba(0,229,160,0.4);
+      text-transform: uppercase; text-align: center;
+      line-height: 1.1; margin-bottom: 8px;
+    }
+    .result-stamp-sub {
+      font-family: var(--font-mono); font-size: clamp(16px, 3vw, 28px);
+      letter-spacing: 10px; color: rgba(0,229,160,0.7);
+      text-align: center; margin-bottom: 48px;
+    }
+    .result-box {
+      background: rgba(10,13,16,0.9); border: 1px solid var(--accent-green);
+      padding: 40px 50px; text-align: center; max-width: 520px;
+      box-shadow: 0 0 60px rgba(0,229,160,0.15);
+    }
+    .result-title { font-family: var(--font-mono); font-size: 11px; letter-spacing: 4px; color: var(--accent-green); margin-bottom: 20px; text-transform: uppercase; }
+    .result-main { font-family: var(--font-mono); font-size: 22px; color: var(--text-bright); margin-bottom: 12px; }
+    .result-sub { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); line-height: 1.8; margin-bottom: 28px; }
+    .result-btn {
+      padding: 10px 32px; background: transparent;
+      border: 1px solid var(--accent-green); color: var(--accent-green);
+      font-family: var(--font-mono); font-size: 12px; letter-spacing: 3px;
+      cursor: pointer; text-transform: uppercase;
+    }
+    .result-btn:hover { background: rgba(0,229,160,0.1); }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<div class="scanlines"></div>
+
+<!-- ===========================
+     SCREEN 0: INTRO
+=========================== -->
+<div id="screen-intro" class="screen active" onclick="skipIntro()">
+  <div id="intro-text" style="display:flex; flex-direction:column; align-items:center; gap:4px;"></div>
+  <div class="intro-skip">— TAP TO SKIP —</div>
+</div>
+
+<!-- ===========================
+     SCREEN 1: TITLE
+=========================== -->
+<div id="screen-title" class="screen">
+  <div class="title-bg-logo"></div>
+  <div class="title-bg-gradient"></div>
+  <div class="title-logo-wrap">
+    <div class="title-sub">URBAN INFRASTRUCTURE MYSTERY &nbsp;&mdash;&nbsp; PROTOTYPE v0.1</div>
+  </div>
+  <div class="title-menu">
+    <button class="menu-btn primary" onclick="showChapter()">&#9654; START</button>
+    <button class="menu-btn">LOAD</button>
+    <button class="menu-btn">SETTINGS</button>
+  </div>
+  <div class="title-footer">&copy; EMITS CORP. &mdash; INTEGRATED MANAGEMENT SYSTEM &mdash; NIGHT SHIFT TERMINAL</div>
+</div>
+
+<!-- ===========================
+     SCREEN 2: CHAPTER SELECT
+=========================== -->
+<div id="screen-chapter" class="screen">
+  <div class="sys-header">
+    <div class="sys-header-left">
+      <button class="back-btn" onclick="showScreen('screen-title')">◀ TITLE</button>
+      <span class="sys-badge">EMITS</span>
+      <span class="sys-title">異常アラート — チャプター選択</span>
+    </div>
+    <div class="sys-header-right">
+      <span><span class="sys-status-dot" style="background:var(--accent-red);"></span>ALERT: 2件</span>
+      <span id="chapter-clock">--:--:--</span>
+    </div>
+  </div>
+
+  <div class="chapter-body">
+    <div class="chapter-heading">— 未解決アラート一覧 — 調査対象を選択してください —</div>
+
+    <div class="chapter-cards">
+      <!-- Chapter 1 -->
+      <div class="chapter-card" onclick="showMap('ch1')">
+        <div class="chapter-card-num">CASE #0091 — 継続発生中</div>
+        <div class="chapter-card-era" style="font-size:15px; color:var(--accent-red);">エミッツ五番町第3</div>
+        <div class="chapter-card-location">千代田区五番町 / 車室数: 9室</div>
+        <div class="chapter-card-err">Err-09 / COUNT_OVERFLOW</div>
+        <div class="chapter-card-desc">
+          入庫カウントが繰り返し上限を超過。<br>
+          センサーログに不審な連続検知あり。<br>
+          原因不明。現地調査を推奨。
+        </div>
+        <div style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim); margin-top:4px;">
+          初回発生: 03:33:09 / 担当: 未割当
+        </div>
+        <div class="chapter-card-arrow">▶ 調査開始</div>
+      </div>
+
+      <div class="chapter-card-divider"></div>
+
+      <!-- Chapter 2 -->
+      <div class="chapter-card" id="ch2-card" onclick="startCh2()">
+        <div class="chapter-card-num">CASE #300M — 長期未解決</div>
+        <div class="chapter-card-era" style="font-size:15px; color:var(--accent-red);">エミッツ府中学園通り裏</div>
+        <div class="chapter-card-location">府中市 / 車室数: 6室</div>
+        <div class="chapter-card-err">Err-300M / TANK_FULL</div>
+        <div class="chapter-card-desc">
+          売上金タンクに異物（紙片）が大量充填。<br>
+          未決済残高が異常値を示したまま停止。<br>
+          タイムスタンプ異常。詳細不明。
+        </div>
+        <div style="font-family:var(--font-mono); font-size:9px; color:var(--text-dim); margin-top:4px;">
+          初回発生: [日付不明] / 担当: 未割当
+        </div>
+        <div class="chapter-card-arrow" id="ch2-arrow">▶ 調査開始</div>
+        <div id="ch2-lock" style="position:absolute; inset:0; background:rgba(0,0,0,0.72); border-radius:6px; flex-direction:column; align-items:center; justify-content:center; gap:8px; pointer-events:none;">
+          <div style="font-family:var(--font-mono); font-size:28px; color:var(--text-dim); letter-spacing:6px;">🔒 LOCKED</div>
+          <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-dim); letter-spacing:2px;">CASE #0091 を先に解決してください</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="chapter-note" id="chapter-note-text">※ まず CASE #0091 を調査してください</div>
+  </div>
+</div>
+
+<!-- ===========================
+     SCREEN 3: MAP
+=========================== -->
+<div id="screen-map" class="screen">
+  <div class="sys-header">
+    <div class="sys-header-left">
+      <button class="back-btn" onclick="showChapter()">◀ CHAPTER</button>
+      <span class="sys-badge">EMITS</span>
+      <span class="sys-title" id="map-header-title">現場マップ</span>
+    </div>
+    <div class="sys-header-right">
+      <span><span class="sys-status-dot" style="background:var(--accent-red);"></span>ALERT ACTIVE</span>
+      <span id="map-clock">--:--:--</span>
+    </div>
+  </div>
+
+  <div class="map-body">
+    <div class="map-canvas" id="map-canvas">
+      <div class="map-grid"></div>
+      <!-- SVG roads (shared base) -->
+      <svg id="map-svg" class="layer-svg" viewBox="0 0 900 600" preserveAspectRatio="xMidYMid slice">
+        <!-- ch1: 千代田区 -->
+        <g id="map-svg-ch1">
+          <line x1="0" y1="300" x2="900" y2="300" stroke="#1e3050" stroke-width="12"/>
+          <line x1="450" y1="0" x2="450" y2="600" stroke="#1e3050" stroke-width="12"/>
+          <line x1="0" y1="180" x2="900" y2="180" stroke="#152030" stroke-width="6"/>
+          <line x1="0" y1="420" x2="900" y2="420" stroke="#152030" stroke-width="6"/>
+          <line x1="220" y1="0" x2="220" y2="600" stroke="#152030" stroke-width="6"/>
+          <line x1="680" y1="0" x2="680" y2="600" stroke="#152030" stroke-width="6"/>
+          <rect x="240" y="190" width="200" height="100" fill="#0e1a28" stroke="#1a2d40"/>
+          <rect x="460" y="190" width="200" height="100" fill="#0e1a28" stroke="#1a2d40"/>
+          <rect x="240" y="310" width="200" height="100" fill="#0e1a28" stroke="#1a2d40"/>
+          <rect x="460" y="310" width="200" height="100" fill="#0e1a28" stroke="#1a2d40"/>
+          <rect x="240" y="190" width="80" height="100" fill="#0a1520" stroke="#ff3b3b" stroke-width="2"/>
+          <text x="255" y="245" fill="#ff3b3b" font-family="Courier New" font-size="12">P</text>
+          <text x="250" y="262" fill="#ff3b3b" font-family="Courier New" font-size="9">EMITS</text>
+          <text x="300" y="160" fill="#1e3050" font-family="Courier New" font-size="11">千代田区五番町</text>
+        </g>
+        <!-- ch2: 府中 -->
+        <g id="map-svg-ch2" style="display:none">
+          <line x1="0" y1="300" x2="900" y2="300" stroke="#1e3050" stroke-width="12"/>
+          <line x1="450" y1="0" x2="450" y2="600" stroke="#1e3050" stroke-width="12"/>
+          <line x1="0" y1="180" x2="900" y2="180" stroke="#152030" stroke-width="6"/>
+          <line x1="0" y1="420" x2="900" y2="420" stroke="#152030" stroke-width="6"/>
+          <line x1="260" y1="0" x2="260" y2="600" stroke="#152030" stroke-width="6"/>
+          <line x1="640" y1="0" x2="640" y2="600" stroke="#152030" stroke-width="6"/>
+          <rect x="280" y="190" width="350" height="100" fill="#0e1a28" stroke="#1a2d40"/>
+          <rect x="280" y="310" width="350" height="100" fill="#0e1a28" stroke="#1a2d40"/>
+          <rect x="460" y="190" width="80" height="100" fill="#0a1520" stroke="#ff3b3b" stroke-width="2"/>
+          <text x="475" y="245" fill="#ff3b3b" font-family="Courier New" font-size="12">P</text>
+          <text x="470" y="262" fill="#ff3b3b" font-family="Courier New" font-size="9">EMITS</text>
+          <text x="320" y="160" fill="#1e3050" font-family="Courier New" font-size="11">府中市 学園通り</text>
+        </g>
+      </svg>
+
+      <!-- Alert Pin (single, positioned by JS) -->
+      <div class="alert-pin" id="map-alert-pin" style="left:30%; top:38%;" onclick="showTerminal()">
+        <div class="pin-label" id="map-pin-label">エミッツ五番町第3</div>
+        <div class="pin-body"><span class="pin-icon">!</span></div>
+      </div>
+
+      <div class="map-legend">
+        <div class="map-legend-item">
+          <div class="legend-dot" style="background:var(--accent-red);"></div>
+          <span>異常アラート発生拠点</span>
+        </div>
+        <div class="map-legend-item">
+          <div class="legend-dot" style="background:var(--accent-green);"></div>
+          <span>正常稼働拠点</span>
+        </div>
+        <div style="margin-top:6px; color:var(--text-dim); font-size:9px;">※ ピンをタップして現場へ</div>
+      </div>
+    </div>
+
+    <!-- Right sidebar -->
+    <div class="map-sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">ALERT LOG</div>
+        <div class="alert-list-item" onclick="showTerminal()">
+          <div class="alert-badge">ERR</div>
+          <div>
+            <div class="alert-name" id="map-alert-name">エミッツ五番町第3<br>千代田区五番町</div>
+            <div class="alert-code" id="map-alert-code">Err-09 / COUNT_OVERFLOW</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="char-window" style="flex:1; align-items:flex-end;">
+        <div class="char-portrait">
+          <img src="char_operator.png" alt="OPR. TANAKA">
+          <div class="char-portrait-overlay"></div>
+        </div>
+        <div class="char-dialog">
+          <div class="msg-speaker" style="color:var(--accent-blue);">▶ OPR. TANAKA</div>
+          <div class="msg-text" id="map-msg-text">
+            ……また出ました。<br>
+            ピンをタップして現場へ向かってください。
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===========================
+     SCREEN 4: TERMINAL
+=========================== -->
+<div id="screen-terminal" class="screen">
+  <div class="sys-header">
+    <div class="sys-header-left">
+      <button class="back-btn" onclick="goBackToMap()">◀ MAP</button>
+      <span class="sys-badge">EMITS</span>
+      <span class="sys-title" id="terminal-header-title">現場端末</span>
+    </div>
+    <div class="sys-header-right">
+      <span><span class="sys-status-dot" style="background:var(--accent-red);"></span>ALERT ACTIVE</span>
+      <span id="terminal-clock">--:--:--</span>
+    </div>
+  </div>
+
+  <div class="terminal-body">
+    <!-- Left: Map panel -->
+    <div class="terminal-map-panel">
+      <div class="terminal-map-header">
+        <span class="terminal-map-title">LOCATION MAP</span>
+        <div class="layer-toggle">
+          <button class="layer-btn active" id="btn-modern" onclick="switchLayer('modern', this)">現代</button>
+          <button class="layer-btn" id="btn-old" onclick="switchLayer('old', this)">古地図</button>
+          <button class="layer-btn" id="btn-aerial" onclick="switchLayer('aerial', this)">空中写真</button>
+        </div>
+      </div>
+
+      <div class="terminal-map-display">
+        <!-- Modern layer -->
+        <div class="map-layer layer-modern active" id="layer-modern">
+          <div class="map-grid"></div>
+          <svg class="layer-svg" viewBox="0 0 700 500" preserveAspectRatio="xMidYMid slice">
+            <line x1="0" y1="250" x2="700" y2="250" stroke="#1e3050" stroke-width="10"/>
+            <line x1="350" y1="0" x2="350" y2="500" stroke="#1e3050" stroke-width="10"/>
+            <line x1="0" y1="150" x2="700" y2="150" stroke="#152030" stroke-width="5"/>
+            <line x1="0" y1="350" x2="700" y2="350" stroke="#152030" stroke-width="5"/>
+            <line x1="180" y1="0" x2="180" y2="500" stroke="#152030" stroke-width="5"/>
+            <line x1="520" y1="0" x2="520" y2="500" stroke="#152030" stroke-width="5"/>
+            <rect x="200" y="160" width="140" height="80" fill="#0e1a28" stroke="#1a2d40"/>
+            <rect x="200" y="260" width="140" height="80" fill="#0e1a28" stroke="#1a2d40"/>
+            <rect x="360" y="160" width="150" height="80" fill="#0e1a28" stroke="#1a2d40"/>
+            <rect x="360" y="260" width="150" height="80" fill="#0e1a28" stroke="#1a2d40"/>
+            <rect x="200" y="160" width="60" height="80" fill="#0a1520" stroke="#ff3b3b" stroke-width="2"/>
+            <text x="210" y="205" fill="#ff3b3b" font-family="Courier New" font-size="9">P</text>
+            <text x="207" y="218" fill="#ff3b3b" font-family="Courier New" font-size="7">EMITS</text>
+            <text id="layer-modern-label-text" x="220" y="140" fill="#1e3050" font-family="Courier New" font-size="9">千代田区五番町</text>
+          </svg>
+          <div class="layer-label" id="layer-modern-label">現代マップ — GSI 2024</div>
+          <div class="target-marker"><div class="target-crosshair"></div></div>
+        </div>
+
+        <!-- Old map layer -->
+        <div class="map-layer layer-old" id="layer-old">
+          <div class="map-grid"></div>
+          <svg class="layer-svg" viewBox="0 0 700 500" preserveAspectRatio="xMidYMid slice">
+            <line x1="0" y1="250" x2="700" y2="250" stroke="#5a4010" stroke-width="6"/>
+            <line x1="350" y1="0" x2="350" y2="500" stroke="#5a4010" stroke-width="6"/>
+            <line x1="0" y1="150" x2="700" y2="150" stroke="#3a2808" stroke-width="3"/>
+            <line x1="0" y1="350" x2="700" y2="350" stroke="#3a2808" stroke-width="3"/>
+            <rect x="190" y="155" width="160" height="90" fill="#1a1408" stroke="#5a4010" stroke-width="1"/>
+            <rect x="360" y="155" width="160" height="90" fill="#1a1408" stroke="#5a4010" stroke-width="1"/>
+            <rect x="190" y="255" width="160" height="90" fill="#1a1408" stroke="#5a4010" stroke-width="1"/>
+            <rect id="old-highlight" x="195" y="160" width="150" height="80" fill="rgba(240,192,64,0.08)" stroke="#f0c040" stroke-width="1.5" stroke-dasharray="4,3"/>
+            <text id="old-label1" x="210" y="195" fill="#f0c040" font-family="Courier New" font-size="10">旗本屋敷</text>
+            <text id="old-label2" x="210" y="210" fill="#f0c040" font-family="Courier New" font-size="8">（番町）</text>
+          </svg>
+          <div class="layer-label" id="layer-old-label">古地図 — 江戸期</div>
+          <div class="target-marker"><div class="target-crosshair" style="border-color:var(--accent-yellow);"></div></div>
+        </div>
+
+        <!-- Aerial layer -->
+        <div class="map-layer layer-aerial" id="layer-aerial">
+          <div class="map-grid"></div>
+          <svg class="layer-svg" viewBox="0 0 700 500" preserveAspectRatio="xMidYMid slice">
+            <rect x="0" y="0" width="700" height="500" fill="#0a1208"/>
+            <line x1="0" y1="250" x2="700" y2="250" stroke="#203018" stroke-width="10"/>
+            <line x1="350" y1="0" x2="350" y2="500" stroke="#203018" stroke-width="10"/>
+            <rect x="190" y="155" width="160" height="90" fill="#0d1a0a" stroke="#203018"/>
+            <rect x="360" y="155" width="160" height="90" fill="#0d1a0a" stroke="#203018"/>
+            <rect x="190" y="255" width="160" height="90" fill="#0d1a0a" stroke="#203018"/>
+            <rect id="aerial-highlight" x="195" y="160" width="150" height="80" fill="rgba(0,229,160,0.06)" stroke="#00e5a0" stroke-width="1.5" stroke-dasharray="4,3"/>
+            <text id="aerial-label" x="210" y="200" fill="#00e5a0" font-family="Courier New" font-size="9">S40年代空中写真</text>
+          </svg>
+          <div class="layer-label" id="layer-aerial-label">過去の空中写真 — 昭和40年代</div>
+          <div class="target-marker"><div class="target-crosshair" style="border-color:var(--accent-green);"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Data panel -->
+    <div class="terminal-data-panel">
+      <div class="data-section">
+        <div class="data-section-title">PARKING INFO</div>
+        <div class="info-row"><span class="info-key">拠点名</span><span class="info-val" id="info-name">—</span></div>
+        <div class="info-row"><span class="info-key">所在地</span><span class="info-val" id="info-addr">—</span></div>
+        <div class="info-row"><span class="info-key">車室数</span><span class="info-val" id="info-slots">—</span></div>
+        <div class="info-row"><span class="info-key">稼働状況</span><span class="info-val" style="color:var(--accent-red);">ALERT</span></div>
+      </div>
+
+      <div class="data-section">
+        <div class="data-section-title">ERROR LOG</div>
+        <div class="error-log-box">
+          <div class="error-code-line" id="err-code">—</div>
+          <div class="error-detail" id="err-detail">—</div>
+          <div class="error-timestamp" id="err-timestamp">—</div>
+        </div>
+      </div>
+
+      <div class="approve-btn-wrap">
+        <button class="approve-btn disabled-label" id="approve-btn" onclick="approveError()">
+          ▶ 承認（精算）
+        </button>
+        <div style="margin-top:8px; font-family:var(--font-mono); font-size:9px; color:var(--text-dim);" id="approve-hint">
+          ヒント: レイヤーを切り替えて現場を調査してください
+        </div>
+      </div>
+
+      <div class="char-window" style="flex:1; align-items:flex-end;">
+        <div class="char-portrait">
+          <img src="char_operator.png" alt="OPR. TANAKA">
+          <div class="char-portrait-overlay"></div>
+        </div>
+        <div class="char-dialog terminal-voice">
+          <div class="msg-speaker">▶ OPR. TANAKA</div>
+          <div class="msg-text" id="terminal-msg-text">…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===========================
+     RESULT OVERLAY
+=========================== -->
+<div class="result-overlay" id="result-overlay">
+  <div class="result-stamp">精算完了</div>
+  <div class="result-stamp-sub">SETTLEMENT COMPLETE</div>
+  <div class="result-box">
+    <div class="result-title">— CASE CLOSED —</div>
+    <div class="result-main" id="result-main-text">—</div>
+    <div class="result-sub" id="result-sub-text">—</div>
+    <button class="result-btn" onclick="closeResult()">&#9654; CHAPTER SELECT</button>
+  </div>
+</div>
+
+<script>
+  // ===== CLOCK =====
+  function updateClock() {
+    const now = new Date();
+    const t = [now.getHours(), now.getMinutes(), now.getSeconds()]
+      .map(n => String(n).padStart(2,'0')).join(':');
+    ['chapter-clock','map-clock','terminal-clock'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = t;
+    });
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ===== SCREEN TRANSITIONS =====
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  function showChapter() { showScreen('screen-chapter'); updateChapterLock(); }
+
+  // ===== CHAPTER LOCK =====
+  let ch1Cleared = false;
+
+  function updateChapterLock() {
+    const card = document.getElementById('ch2-card');
+    const lock = document.getElementById('ch2-lock');
+    const note = document.getElementById('chapter-note-text');
+    if (ch1Cleared) {
+      card.style.opacity = '1';
+      card.style.cursor = 'pointer';
+      lock.style.display = 'none'; lock.style.removeProperty('flex-direction');
+      note.textContent = '※ CASE #0091 解決済み — CASE #300M が解放されました';
+      note.style.color = 'var(--accent-green)';
+    } else {
+      card.style.opacity = '0.45';
+      card.style.cursor = 'not-allowed';
+      lock.style.display = 'flex'; lock.style.flexDirection = 'column';
+      note.textContent = '※ まず CASE #0091 を調査してください';
+      note.style.color = '';
+    }
+  }
+
+  function startCh2() {
+    if (!ch1Cleared) return;
+    showMap('ch2');
+  }
+
+  // ===== INTRO SEQUENCE =====
+  const introLines = [
+    { text: '深夜2時。', delay: 400 },
+    { text: '俺の仕事は、街のコインパーキングを巡回することだ。', delay: 1400 },
+    { text: '精算機が壊れたら直す。', delay: 2800 },
+    { text: 'それだけのはずだった。', delay: 3900 },
+    { text: '&nbsp;', delay: 5200 },
+    { text: '本部から無線が入る。', delay: 5800 },
+    { text: '「<span class=\'hl\'>エミッツ五番町第3</span>、また出ました。今夜で3日連続です」', delay: 7000 },
+    { text: '田中さん。夜間オペレーター。', delay: 8600 },
+    { text: 'いつも淡々としている。', delay: 9600 },
+    { text: '&nbsp;', delay: 10800 },
+    { text: 'エラーコードは <span class=\'hl\'>Err-09 / COUNT_OVERFLOW</span>。', delay: 11400 },
+    { text: '誰もいないのに、カウントが回り続けている。', delay: 12800 },
+    { text: '9台目で、必ず止まる。', delay: 14200 },
+    { text: '&nbsp;', delay: 15500 },
+    { text: 'おかしい。', delay: 16100 },
+    { text: 'でも、俺には関係ない。', delay: 17000 },
+    { text: '直して、精算して、帰るだけだ。', delay: 18100 },
+    { text: '&nbsp;', delay: 19500 },
+    { text: '——<span class=\'hl-green\'>本当に、それだけのはずだった。</span>', delay: 20100 },
+  ];
+
+  let introTimer = null;
+  let introTimeouts = [];
+
+  function runIntro() {
+    const container = document.getElementById('intro-text');
+    container.innerHTML = '';
+    introLines.forEach((item, i) => {
+      const div = document.createElement('div');
+      div.className = 'intro-line';
+      div.innerHTML = item.text;
+      container.appendChild(div);
+      const t = setTimeout(() => {
+        // dim previous lines
+        container.querySelectorAll('.intro-line.visible').forEach(el => {
+          el.classList.add('dim');
+          el.classList.remove('visible');
+        });
+        div.classList.add('visible');
+      }, item.delay);
+      introTimeouts.push(t);
+    });
+    // auto-advance to title after last line
+    const autoT = setTimeout(() => showScreen('screen-title'), introLines[introLines.length-1].delay + 2200);
+    introTimeouts.push(autoT);
+  }
+
+  function skipIntro() {
+    introTimeouts.forEach(t => clearTimeout(t));
+    showScreen('screen-title');
+  }
+
+  // Start intro on load
+  window.addEventListener('load', () => { runIntro(); updateChapterLock(); });
+
+  // ===== CHAPTER DATA =====
+  const chapters = {
+    ch1: {
+      mapTitle: '現場マップ — 千代田区五番町',
+      pinLabel: 'エミッツ五番町第3',
+      pinPos: { left: '30%', top: '38%' },
+      alertName: 'エミッツ五番町第3\n千代田区五番町',
+      alertCode: 'Err-09 / COUNT_OVERFLOW',
+      mapMsg: '……また出ました。今夜で3日連続です。<br>ピンをタップして現場へ向かってください。',
+      terminalTitle: '現場端末 — エミッツ五番町第3',
+      infoName: 'エミッツ五番町第3',
+      infoAddr: '千代田区五番町',
+      infoSlots: '9室',
+      errCode: 'Err-09',
+      errDetail: 'COUNT_OVERFLOW\nカウント値: 1→2→3→4→5→6→7→8→9→\n10台目でフリーズ（存在しない車室）',
+      errTimestamp: '最終発生: 03:33:09 / 繰り返し発生中',
+      msgs: {
+        modern: '……9台目でフリーズ、ですか。<br>なんで9なんでしょう。変な数字ですね。',
+        old:    '……旗本屋敷跡、ですか。<br>番町皿屋敷……9枚の皿……まさか。',
+        aerial: '昭和の写真でも、ここは普通の街区ですね。<br>やっぱり古地図の方が気になります。'
+      },
+      unlockLayer: 'old',
+      resultMain: 'Err-09 消滅',
+      resultSub: '9車室しかないこのパーキングは、\n存在しない「10枚目の皿」を数えられず、\nずっとループし続けていた。\n\n主人公は静かに、承認ボタンを押した。',
+      svgGroup: 'ch1',
+      oldLabel1: '旗本屋敷',
+      oldLabel2: '（番町）',
+      aerialLabel: 'S40年代空中写真',
+      layerOldLabel: '古地図 — 江戸期',
+      layerAerialLabel: '過去の空中写真 — 昭和40年代',
+    },
+    ch2: {
+      mapTitle: '現場マップ — 府中市学園通り',
+      pinLabel: 'エミッツ府中学園通り裏',
+      pinPos: { left: '52%', top: '42%' },
+      alertName: 'エミッツ府中学園通り裏\n府中市',
+      alertCode: 'Err-300M / TANK_FULL',
+      mapMsg: '……タンクが古い紙クズで満杯です。<br>ピンをタップして現場へ向かってください。',
+      terminalTitle: '現場端末 — エミッツ府中学園通り裏',
+      infoName: 'エミッツ府中学園通り裏',
+      infoAddr: '府中市',
+      infoSlots: '6室',
+      errCode: 'Err-300M',
+      errDetail: 'TANK_FULL\n売上金タンク満杯（古い紙クズ検出）\n未決済残高: ¥293,075,000',
+      errTimestamp: '最終発生: 昭和43年12月10日 09:19 / 未精算',
+      msgs: {
+        modern: '……紙クズって、なんですか。<br>普通の硬貨じゃないんですか、これ。',
+        old:    '江戸期の地図には何もないですね。<br>昭和の空中写真の方が気になります。',
+        aerial: '……昭和40年代の写真。<br>この道、カローラが乗り捨てられた場所の近くじゃ……'
+      },
+      unlockLayer: 'aerial',
+      resultMain: 'Err-300M 消滅',
+      resultSub: '犯人がカローラを乗り捨ててから半世紀以上、\nこのインフラはずっと「出庫精算」を待っていた。\n\n主人公は静かに、逃走を歴史の闇へと精算した。',
+      svgGroup: 'ch2',
+      oldLabel1: '（江戸期記録なし）',
+      oldLabel2: '',
+      aerialLabel: '第3の現場付近 — S43',
+      layerOldLabel: '古地図 — 江戸期',
+      layerAerialLabel: '過去の空中写真 — 昭和40年代',
+    }
+  };
+
+  let currentChapter = 'ch1';
+  let layerUnlocked = false;
+
+  function showMap(chId) {
+    currentChapter = chId;
+    layerUnlocked = false;
+    const ch = chapters[chId];
+
+    // Map screen
+    document.getElementById('map-header-title').textContent = ch.mapTitle;
+    document.getElementById('map-pin-label').textContent = ch.pinLabel;
+    const pin = document.getElementById('map-alert-pin');
+    pin.style.left = ch.pinPos.left;
+    pin.style.top  = ch.pinPos.top;
+    document.getElementById('map-alert-name').innerHTML = ch.alertName.replace('\n','<br>');
+    document.getElementById('map-alert-code').textContent = ch.alertCode;
+    document.getElementById('map-msg-text').innerHTML = ch.mapMsg;
+
+    // Show correct SVG group
+    document.getElementById('map-svg-ch1').style.display = chId === 'ch1' ? '' : 'none';
+    document.getElementById('map-svg-ch2').style.display = chId === 'ch2' ? '' : 'none';
+
+    showScreen('screen-map');
+  }
+
+  function goBackToMap() {
+    showScreen('screen-map');
+  }
+
+  function showTerminal() {
+    const ch = chapters[currentChapter];
+
+    document.getElementById('terminal-header-title').textContent = ch.terminalTitle;
+    document.getElementById('info-name').textContent  = ch.infoName;
+    document.getElementById('info-addr').textContent  = ch.infoAddr;
+    document.getElementById('info-slots').textContent = ch.infoSlots;
+    document.getElementById('err-code').textContent   = ch.errCode;
+    document.getElementById('err-detail').innerHTML   = ch.errDetail.replace(/\n/g,'<br>');
+    document.getElementById('err-timestamp').textContent = ch.errTimestamp;
+    document.getElementById('terminal-msg-text').innerHTML = ch.msgs.modern;
+
+    // Layer labels
+    document.getElementById('layer-old-label').textContent    = ch.layerOldLabel;
+    document.getElementById('layer-aerial-label').textContent = ch.layerAerialLabel;
+    document.getElementById('old-label1').textContent  = ch.oldLabel1;
+    document.getElementById('old-label2').textContent  = ch.oldLabel2;
+    document.getElementById('aerial-label').textContent = ch.aerialLabel;
+
+    // Reset layers
+    switchLayer('modern', document.getElementById('btn-modern'));
+
+    // Reset approve button
+    const btn = document.getElementById('approve-btn');
+    btn.classList.remove('enabled');
+    btn.classList.add('disabled-label');
+    document.getElementById('approve-hint').textContent = 'ヒント: レイヤーを切り替えて現場を調査してください';
+    layerUnlocked = false;
+
+    showScreen('screen-terminal');
+  }
+
+  function switchLayer(name, el) {
+    const ch = chapters[currentChapter];
+
+    // Toggle buttons
+    document.querySelectorAll('.layer-btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+
+    // Toggle layers
+    document.querySelectorAll('.map-layer').forEach(l => l.classList.remove('active'));
+    document.getElementById('layer-' + name).classList.add('active');
+
+    // Update message
+    document.getElementById('terminal-msg-text').innerHTML = ch.msgs[name];
+
+    // Unlock approve button when the key layer is viewed
+    if (name === ch.unlockLayer) {
+      layerUnlocked = true;
+      const btn = document.getElementById('approve-btn');
+      btn.classList.add('enabled');
+      btn.classList.remove('disabled-label');
+      document.getElementById('approve-hint').textContent = '▶ 謎が解けました。承認して精算してください';
+    }
+  }
+
+  function approveError() {
+    if (!layerUnlocked) return;
+    const ch = chapters[currentChapter];
+    document.getElementById('result-main-text').textContent = ch.resultMain;
+    document.getElementById('result-sub-text').innerHTML = ch.resultSub.replace(/\n/g,'<br>');
+    // mark ch1 cleared if applicable
+    if (currentChapter === 'ch1') ch1Cleared = true;
+    document.getElementById('result-overlay').classList.add('active');
+  }
+
+  function closeResult() {
+    document.getElementById('result-overlay').classList.remove('active');
+    showChapter();
+  }
+</script>
+</body>
+</html>
