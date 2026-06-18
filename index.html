@@ -92,6 +92,11 @@
       color: var(--text-dim); letter-spacing: 3px;
       animation: blink 1.4s infinite;
     }
+    .intro-tap-start {
+      font-family: var(--font-mono); font-size: clamp(13px, 2vw, 16px);
+      color: var(--text-dim); letter-spacing: 6px; text-transform: uppercase;
+      animation: blink 1.4s infinite;
+    }
     @keyframes blink { 0%,100%{opacity:0.3} 50%{opacity:1} }
 
     /* ===== TITLE SCREEN ===== */
@@ -470,9 +475,10 @@
 <!-- ===========================
      SCREEN 0: INTRO
 =========================== -->
-<div id="screen-intro" class="screen active" onclick="skipIntro()">
-  <div id="intro-text" style="display:flex; flex-direction:column; align-items:center; gap:4px;"></div>
-  <div class="intro-skip">— TAP TO SKIP —</div>
+<div id="screen-intro" class="screen active" onclick="handleIntroClick()">  
+  <div id="intro-tap-start" class="intro-tap-start">— TAP TO START —</div>
+  <div id="intro-text" style="display:none; flex-direction:column; align-items:center; gap:4px;"></div>
+  <div class="intro-skip" id="intro-skip-hint" style="display:none;">— TAP TO SKIP —</div>
 </div>
 
 <!-- ===========================
@@ -905,13 +911,31 @@
     introTimeouts.push(autoT);
   }
 
+  let introStarted = false;
+
+  function handleIntroClick() {
+    if (!introStarted) {
+      // First tap: start the intro
+      introStarted = true;
+      document.getElementById('intro-tap-start').style.display = 'none';
+      const textBox = document.getElementById('intro-text');
+      textBox.style.display = 'flex';
+      document.getElementById('intro-skip-hint').style.display = 'block';
+      runIntro();
+    } else {
+      // Subsequent tap: skip to title
+      introTimeouts.forEach(t => clearTimeout(t));
+      showScreen('screen-title');
+    }
+  }
+
   function skipIntro() {
     introTimeouts.forEach(t => clearTimeout(t));
     showScreen('screen-title');
   }
 
-  // Start intro on load
-  window.addEventListener('load', () => { runIntro(); updateChapterLock(); });
+  // Init on load (just show tap-to-start, don't auto-run intro)
+  window.addEventListener('load', () => { updateChapterLock(); });
 
   // ===== CHAPTER DATA =====
   const chapters = {
